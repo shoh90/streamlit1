@@ -46,12 +46,14 @@ def load_data(_conn):
     except Exception as e: print(f"Error loading Rallit CSVs: {e}")
     try: youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
     except pd.io.sql.DatabaseError: youth_df = generate_sample_youth_data()
+    
     overall_data = youth_df.groupby('연령계층별', as_index=False).sum(numeric_only=True)
     overall_data["성별"] = "전체"
     rate_cols = [col for col in youth_df.columns if "_실업률" in col]
     mean_rates = youth_df.groupby('연령계층별')[rate_cols].mean().reset_index()
     for col in rate_cols: overall_data[col] = overall_data['연령계층별'].map(mean_rates.set_index('연령계층별')[col])
     youth_df = pd.concat([youth_df, overall_data], ignore_index=True)
+
     id_vars = ["성별", "연령계층별"]
     unemp_long = youth_df.melt(id_vars=id_vars, value_vars=rate_cols, var_name="월", value_name="실업률")
     pop_long = youth_df.melt(id_vars=id_vars, value_vars=[c for c in youth_df.columns if "_경제활동인구" in c], var_name="월", value_name="경제활동인구")
@@ -162,11 +164,9 @@ with main_tabs[0]:
                     fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
                 except Exception: st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
         else:
-            # --- [고도화] 스킬 정보 부재 시, 경력 분포 파이 차트 표시 ---
             with st.container(border=True):
                 st.warning(f"'{top_job}' 직무의 상세 스킬 정보가 아직 준비되지 않았습니다.")
                 st.info(f"대신 시장의 **'{top_job}' 직무 경력 분포**를 확인해보세요!")
-
                 single_job_levels = levels_df[levels_df['직무'] == top_job]
                 if not single_job_levels.empty:
                     fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{top_job}' 직무 경력 분포", hole=0.3)
@@ -205,43 +205,55 @@ with main_tabs[1]:
             st.markdown(f"#### **📊 {selected_age} 고용지표**")
             month_options = sorted(trend_df["월"].unique(), reverse=True)
             selected_month = st.selectbox("🗓️ 조회할 월 선택", month_options, key="selected_month_v4")
+            
             filtered_trend = trend_df[trend_df['연령계층별'] == selected_age]
-            try:
-                current_overall = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")].iloc[0]
+            
+            # --- [수정] 데이터 존재 여부 확인 로직 강화 ---
+            current_overall_series = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")]
+            
+            if not current_overall_series.empty:
+                current_overall = current_overall_series.iloc[0]
                 current_unemployment_rate, current_active_pop_k, current_employed_pop_k = current_overall['실업률'], current_overall['경제활동인구'] / 1000, current_overall['취업자'] / 1000
                 delta_unemployment, delta_active, delta_employed = None, None, None
+                
                 prev_month_index = month_options.index(selected_month) + 1
                 if prev_month_index < len(month_options):
                     prev_month = month_options[prev_month_index]
-                    prev_overall = filtered_trend[(filtered_trend["월"] == prev_month) & (filtered_trend["성별"] == "전체")].iloc[0]
-                    delta_unemployment = f"{current_unemployment_rate - prev_overall['실업률']:.1f}%p"
-                    delta_active = f"{(current_active_pop_k - prev_overall['경제활동인구']/1000):,.0f} 천명"
-                    delta_employed = f"{(current_employed_pop_k - prev_overall['취업자']/1000):,.0f} 천명"
+                    prev_overall_series = filtered_trend[(filtered_trend["월"] == prev_month) & (filtered_trend["성별"] == "전체")]
+                    if not prev_overall_series.empty:
+                        prev_overall = prev_overall_series.iloc[0]
+                        delta_unemployment = f"{current_unemployment_rate - prev_overall['실업률']:.1f}%p"
+                        delta_active = f"{(current_active_pop_k - prev_overall['경제활동인구']/1000):,.0f} 천명"
+                        delta_employed = f"{(current_employed_pop_k - prev_overall['취업자']/1000):,.0f} 천명"
+                
                 m_col1, m_col2, m_col3 = st.columns(3)
                 m_col1.metric(label="실업률 (전체)", value=f"{current_unemployment_rate:.1f}%", delta=delta_unemployment, delta_color="inverse")
                 m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
                 m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
+                
                 st.markdown("---")
                 gender_data = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] != "전체")]
-                
-                # --- [고도화] 성별 차트 데이터 존재 여부 확인 ---
                 if not gender_data.empty:
                     fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
                     fig_youth.update_traces(textposition='outside')
                     st.plotly_chart(fig_youth, use_container_width=True)
                 else:
                     st.info(f"선택하신 '{selected_age}', '{selected_month}' 조건의 성별 데이터가 없습니다.")
-
+                
                 st.markdown("---")
                 show_trend_chart(trend_df, selected_age)
-            except IndexError: st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
-        else: st.warning("고용지표 데이터를 불러오지 못했습니다.")
+            else:
+                st.warning(f"'{selected_age}', '{selected_month}'에 대한 전체 데이터가 없습니다. 다른 조건을 선택해주세요.")
+        else:
+            st.warning("고용지표 데이터를 불러오지 못했습니다.")
+            
     with market_tabs[1]:
         st.markdown("#### **🛠️ 직무별 상위 기술스택 TOP 10**")
         job_to_show = st.selectbox("분석할 직무 선택", sorted(skills_df["직무"].unique()), key="skill_job")
         filtered_skills = skills_df[skills_df["직무"] == job_to_show]
         fig_skills_market = px.bar(filtered_skills.sort_values("빈도"), x="빈도", y="기술스택", title=f"'{job_to_show}' 직무 주요 기술스택", orientation='h')
         st.plotly_chart(fig_skills_market, use_container_width=True)
+        
     with market_tabs[2]:
         st.markdown("#### **📈 직무별 공고 경력레벨 분포**")
         c1, c2 = st.columns(2)
