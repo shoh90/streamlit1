@@ -9,12 +9,7 @@ import matplotlib.pyplot as plt
 import platform
 
 # --- 1. 페이지 기본 설정 ---
-st.set_page_config(
-    page_title="Job-Fit Insight Dashboard",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Job-Fit Insight Dashboard", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
 
 # --- 2. CSS 스타일링 ---
 st.markdown("""
@@ -33,9 +28,7 @@ st.markdown("""
 @st.cache_resource
 def init_connection(db_path="data/job_fit_insight.db"):
     db_file = Path(db_path)
-    if not db_file.exists():
-        st.error(f"데이터베이스 파일('{db_path}')을 찾을 수 없습니다. `setup_database.py`를 먼저 실행해주세요.")
-        st.stop()
+    if not db_file.exists(): st.error(f"DB 파일('{db_path}') 없음. `setup_database.py` 실행 필요."); st.stop()
     return sqlite3.connect(db_file, check_same_thread=False)
 
 def generate_sample_youth_data():
@@ -49,19 +42,16 @@ def load_data(_conn):
     rallit_df = None
     try:
         csv_files = glob.glob(str(Path("data") / "rallit_*.csv"))
-        if csv_files:
-            rallit_df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True).drop_duplicates(subset=['url']).reset_index(drop=True)
+        if csv_files: rallit_df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True).drop_duplicates(subset=['url']).reset_index(drop=True)
     except Exception as e: print(f"Error loading Rallit CSVs: {e}")
     try: youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
     except pd.io.sql.DatabaseError: youth_df = generate_sample_youth_data()
-    
     overall_data = youth_df.groupby('연령계층별', as_index=False).sum(numeric_only=True)
     overall_data["성별"] = "전체"
     rate_cols = [col for col in youth_df.columns if "_실업률" in col]
     mean_rates = youth_df.groupby('연령계층별')[rate_cols].mean().reset_index()
     for col in rate_cols: overall_data[col] = overall_data['연령계층별'].map(mean_rates.set_index('연령계층별')[col])
     youth_df = pd.concat([youth_df, overall_data], ignore_index=True)
-
     id_vars = ["성별", "연령계층별"]
     unemp_long = youth_df.melt(id_vars=id_vars, value_vars=rate_cols, var_name="월", value_name="실업률")
     pop_long = youth_df.melt(id_vars=id_vars, value_vars=[c for c in youth_df.columns if "_경제활동인구" in c], var_name="월", value_name="경제활동인구")
@@ -91,11 +81,7 @@ def show_trend_chart(df, age_group):
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- [수정] 누락된 데이터 로딩 호출 코드 추가 ---
-conn = init_connection()
-trend_df, skills_df, levels_df, rallit_df = load_data(conn)
-
-# --- 4. 분석 로직 및 5. 사이드바 UI ---
+# 4. 분석 로직 및 5. 사이드바 UI
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
@@ -130,10 +116,12 @@ with st.sidebar:
         st.markdown(f"🎨 **업무 스타일**: {work_style}")
         st.markdown(f"🤝 **선호 환경**: {work_env}")
 
-# 6. 메인 로직 실행
+conn = init_connection()
+trend_df, skills_df, levels_df, rallit_df = load_data(conn)
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
+
 
 # 7. 대시보드 본문
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
@@ -171,16 +159,21 @@ with main_tabs[0]:
             with skill_tabs[1]:
                 try:
                     wc = create_word_cloud(skills_to_show)
-                    fig, ax = plt.subplots()
-                    ax.imshow(wc, interpolation='bilinear'); ax.axis('off')
-                    st.pyplot(fig)
-                except Exception as e:
-                    st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
+                    fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
+                except Exception: st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
         else:
+            # --- [고도화] 스킬 정보 부재 시, 경력 분포 파이 차트 표시 ---
             with st.container(border=True):
                 st.warning(f"'{top_job}' 직무의 상세 스킬 정보가 아직 준비되지 않았습니다.")
-                st.write("다른 직무의 기술 트렌드가 궁금하신가요?")
-                st.info("상단의 **'시장 동향 분석'** 탭을 클릭하여 **'기술 스택'**을 확인해보세요!")
+                st.info(f"대신 시장의 **'{top_job}' 직무 경력 분포**를 확인해보세요!")
+
+                single_job_levels = levels_df[levels_df['직무'] == top_job]
+                if not single_job_levels.empty:
+                    fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{top_job}' 직무 경력 분포", hole=0.3)
+                    fig_pie.update_traces(textinfo='percent+label')
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                else:
+                    st.info(f"'{top_job}' 직무에 대한 경력 분포 데이터도 아직 없습니다.")
     
     st.markdown("---")
     st.subheader("📌 나에게 맞는 Rallit 채용공고")
@@ -197,12 +190,7 @@ with main_tabs[0]:
             top_jobs = filtered_jobs.head(5)
             if not top_jobs.empty:
                 for _, row in top_jobs.iterrows():
-                    st.markdown(f"""
-                    <div class="job-posting-card">
-                        <a href="{row['url']}" target="_blank">{row['title']}</a>
-                        <p>🏢 **회사:** {row.get('companyName', '정보 없음')} | 📍 **지역:** {row.get('addressRegion', '정보 없음')}</p>
-                        <p>🛠️ **기술스택:** {row.get('jobSkillKeywords', '정보 없음')}</p>
-                    </div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="job-posting-card"><a href="{row['url']}" target="_blank">{row['title']}</a><p>🏢 **회사:** {row.get('companyName', '정보 없음')} | 📍 **지역:** {row.get('addressRegion', '정보 없음')}</p><p>🛠️ **기술스택:** {row.get('jobSkillKeywords', '정보 없음')}</p></div>""", unsafe_allow_html=True)
             else: st.info(f"'{interest_job}' 직무와 '{career_level}' 수준에 맞는 채용 공고를 찾지 못했습니다.")
         else: st.error(f"Rallit 데이터 파일에 필수 컬럼('title', 'jobLevels')이 없습니다. CSV 파일의 컬럼명을 확인해주세요.")
     else: st.warning("❗ 랠릿 채용공고 데이터를 불러올 수 없습니다. `data` 폴더에 `rallit_*.csv` 파일이 있는지 확인해주세요.")
@@ -235,9 +223,15 @@ with main_tabs[1]:
                 m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
                 st.markdown("---")
                 gender_data = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] != "전체")]
-                fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
-                fig_youth.update_traces(textposition='outside')
-                st.plotly_chart(fig_youth, use_container_width=True)
+                
+                # --- [고도화] 성별 차트 데이터 존재 여부 확인 ---
+                if not gender_data.empty:
+                    fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
+                    fig_youth.update_traces(textposition='outside')
+                    st.plotly_chart(fig_youth, use_container_width=True)
+                else:
+                    st.info(f"선택하신 '{selected_age}', '{selected_month}' 조건의 성별 데이터가 없습니다.")
+
                 st.markdown("---")
                 show_trend_chart(trend_df, selected_age)
             except IndexError: st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
