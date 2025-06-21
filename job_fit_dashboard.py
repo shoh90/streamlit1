@@ -103,29 +103,6 @@ def show_trend_chart(df, age_group):
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
-def prepare_ai_analysis_data(skills_df, levels_df, rallit_df, interest_job, career_level):
-    context_text = ""
-    skills_info = skills_df[skills_df['직무'] == interest_job]
-    if not skills_info.empty:
-        context_text += f"### [{interest_job} 직무 시장의 주요 기술스택]\n"
-        context_text += skills_info[['기술스택', '빈도']].to_markdown(index=False) + "\n\n"
-    levels_info = levels_df[levels_df['직무'] == interest_job]
-    if not levels_info.empty:
-        context_text += f"### [{interest_job} 직무 시장의 경력 레벨 분포]\n"
-        context_text += levels_info[['jobLevels', '공고수']].to_markdown(index=False) + "\n\n"
-    if rallit_df is not None and all(col in rallit_df.columns for col in ['title', 'jobLevels', 'companyName']):
-        search_keywords = job_category_map.get(interest_job, [interest_job])
-        keyword_regex = '|'.join(search_keywords)
-        job_mask = rallit_df["title"].str.contains(keyword_regex, case=False, na=False)
-        if career_level == "상관 없음": career_mask = pd.Series(True, index=rallit_df.index)
-        elif career_level == "신입": career_mask = rallit_df["jobLevels"].str.contains("신입|경력 무관|JUNIOR", case=False, na=False)
-        else: career_mask = rallit_df["jobLevels"].str.contains(career_level.replace('-','~'), case=False, na=False)
-        filtered_jobs = rallit_df[job_mask & career_mask].head(3)
-        if not filtered_jobs.empty:
-            context_text += "### [현재 조건에 맞는 채용 공고 예시]\n"
-            context_text += filtered_jobs[['title', 'companyName', 'jobLevels']].to_markdown(index=False) + "\n\n"
-    return context_text if context_text else "분석할 시장 데이터가 부족합니다."
-
 # --- 4. 분석 로직 ---
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
 def calculate_job_fit(work_style, work_env, interest_job):
@@ -278,10 +255,8 @@ with main_tabs[1]:
                 m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
                 m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
                 show_trend_chart(trend_df, selected_age)
-            else:
-                st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
-        else:
-            st.warning("고용지표 데이터를 불러오지 못했습니다.")
+            else: st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
+        else: st.warning("고용지표 데이터를 불러오지 못했습니다.")
     with market_tabs[1]:
         st.markdown("#### **🛠️ 직무별 상위 기술스택 TOP 10**")
         job_to_show = st.selectbox("분석할 직무 선택", sorted(skills_df["직무"].unique()), key="skill_job")
@@ -305,6 +280,69 @@ with main_tabs[1]:
             else:
                 st.info(f"'{selected_pie_job}' 직무에 대한 경력 분포 데이터가 없습니다.")
 
-# 8. 푸터
+# --- 8. AI 도우미 탭 ---
+with main_tabs[2]:
+    st.subheader("Groq 기반 초고속 AI 분석")
+    if client is None:
+        st.error("AI 도우미를 사용하려면 Groq API 키를 설정해야 합니다. Streamlit Cloud 배포 시 **Settings -> Secrets**에 키를 추가해주세요.", icon="🔑")
+        st.code("GROQ_API_KEY = 'gsk_YourKeyHere'")
+    else:
+        ai_feature_tabs = st.tabs(["**🤖 AI 맞춤 직무 추천**", "**📄 AI 채용공고 분석**", "**💬 AI 커리어 상담**"])
+
+        def run_ai_job_recommendation():
+            with st.spinner("AI가 당신의 프로필과 시장 데이터를 분석하여 맞춤 직무를 추천 중입니다..."):
+                user_profile_summary = f"현재 '{interest_job}' 직무에 관심이 있고, 희망 경력은 '{career_level}'입니다. 저의 성향은 '{work_style}'하며, '{work_env}' 환경을 선호합니다."
+                market_context = prepare_ai_analysis_data(skills_df, levels_df, rallit_df, interest_job, career_level)
+                system_prompt = "You are a highly-skilled career consultant and data analyst. Your task is to provide personalized job recommendations based on user's profile and market data."
+                user_prompt = f"**[사용자 프로필]**\n{user_profile_summary}\n\n**[시장 데이터 분석 결과]**\n{market_context}\n\n**[Task]**\nBased on all the provided information, please perform the following tasks in Korean:\n1. Recommend the top 3 most suitable job titles for this user.\n2. For each recommendation, provide a detailed rationale, explaining WHY it's a good fit by linking the user's profile to the market data.\n3. For each recommendation, suggest a concrete next step or preparation strategy.\n4. Conclude with a final summary of career advice.\nPlease structure your entire response in clear, well-formatted Markdown."
+                chat_completion = client.chat.completions.create(messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], model=selected_model, temperature=temperature, max_tokens=max_tokens)
+                st.session_state.ai_recommendation_result = chat_completion.choices[0].message.content
+
+        with ai_feature_tabs[0]:
+            st.markdown("##### 나의 프로필과 시장 데이터를 종합하여 AI가 직무를 추천합니다.")
+            user_profile_summary = f"현재 **'{interest_job}'** 직무에 관심이 있고, 희망 경력은 **'{career_level}'**입니다..."
+            st.info(f"**분석 기준 프로필:** {user_profile_summary}")
+            if st.button("AI에게 맞춤 직무 추천받기", type="primary"):
+                run_ai_job_recommendation()
+            if "ai_recommendation_result" in st.session_state:
+                st.markdown("---"); st.subheader("🤖 AI 맞춤 추천 결과"); st.markdown(st.session_state.ai_recommendation_result)
+
+        def run_jd_analysis(job_desc):
+            with st.spinner("Groq AI가 채용 공고를 분석 중입니다..."):
+                system_prompt = "You are a professional HR analyst..."
+                user_prompt = f"Analyze the following job description...\n{job_desc}..."
+                chat_completion = client.chat.completions.create(messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], model=selected_model, temperature=temperature, max_tokens=max_tokens)
+                st.session_state.jd_analysis_result = chat_completion.choices[0].message.content
+
+        with ai_feature_tabs[1]:
+            st.markdown("##### 채용 공고를 입력하면 AI가 분석해 드립니다.")
+            job_desc_input = st.text_area("여기에 채용 공고를 붙여넣으세요:", height=250, key="jd_input")
+            if st.button("분석 시작하기", key="analyze_jd"):
+                if job_desc_input: run_jd_analysis(job_desc_input)
+                else: st.warning("분석할 채용 공고를 입력해주세요.")
+            if "jd_analysis_result" in st.session_state:
+                st.markdown("---"); st.subheader("🤖 AI 분석 결과"); st.markdown(st.session_state.jd_analysis_result)
+
+        with ai_feature_tabs[2]:
+            st.markdown("##### 현재 나의 프로필을 바탕으로 커리어에 대해 질문해보세요.")
+            if "ai_chat_messages" not in st.session_state:
+                st.session_state.ai_chat_messages = [{"role": "assistant", "content": "안녕하세요! 프로필을 바탕으로 커리어에 대해 무엇이든 물어보세요."}]
+            for message in st.session_state.ai_chat_messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+            user_profile_prompt = f"저의 프로필은 다음과 같습니다: {user_profile_summary}"
+            if user_question := st.chat_input("질문을 입력하세요..."):
+                st.session_state.ai_chat_messages.append({"role": "user", "content": user_question})
+                with st.chat_message("user"): st.markdown(user_question)
+                with st.chat_message("assistant"):
+                    with st.spinner("AI가 답변을 생각 중입니다..."):
+                        system_prompt = "You are a friendly and insightful career counselor..."
+                        messages_for_api = [{"role": "system", "content": system_prompt}] + [{"role": "user", "content": user_profile_prompt}] + st.session_state.ai_chat_messages
+                        chat_completion = client.chat.completions.create(messages=messages_for_api, model=selected_model, temperature=temperature, max_tokens=max_tokens)
+                        response = chat_completion.choices[0].message.content
+                        st.markdown(response)
+                st.session_state.ai_chat_messages.append({"role": "assistant", "content": response})
+
+# 9. 푸터
 st.markdown("---")
 st.markdown('<div style="text-align: center; color: #666;"><p>🧠 Job-Fit Insight Dashboard | Powered by Streamlit & Groq</p></div>', unsafe_allow_html=True)
