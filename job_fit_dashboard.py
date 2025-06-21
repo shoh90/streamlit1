@@ -66,6 +66,7 @@ def load_all_data(_conn):
     for col in rate_cols:
         overall_data[col] = overall_data['연령계층별'].map(mean_rates.set_index('연령계층별')[col])
     youth_df = pd.concat([youth_df, overall_data], ignore_index=True)
+
     id_vars = ["성별", "연령계층별"]
     unemp_long = youth_df.melt(id_vars=id_vars, value_vars=rate_cols, var_name="월", value_name="실업률")
     pop_long = youth_df.melt(id_vars=id_vars, value_vars=[c for c in youth_df.columns if "_경제활동인구" in c], var_name="월", value_name="경제활동인구")
@@ -102,24 +103,40 @@ def show_trend_chart(df, age_group):
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
+def prepare_ai_analysis_data(skills_df, levels_df, rallit_df, interest_job, career_level):
+    context_text = ""
+    skills_info = skills_df[skills_df['직무'] == interest_job]
+    if not skills_info.empty:
+        context_text += f"### [{interest_job} 직무 시장의 주요 기술스택]\n"
+        context_text += skills_info[['기술스택', '빈도']].to_markdown(index=False) + "\n\n"
+    levels_info = levels_df[levels_df['직무'] == interest_job]
+    if not levels_info.empty:
+        context_text += f"### [{interest_job} 직무 시장의 경력 레벨 분포]\n"
+        context_text += levels_info[['jobLevels', '공고수']].to_markdown(index=False) + "\n\n"
+    if rallit_df is not None and all(col in rallit_df.columns for col in ['title', 'jobLevels', 'companyName']):
+        search_keywords = job_category_map.get(interest_job, [interest_job])
+        keyword_regex = '|'.join(search_keywords)
+        job_mask = rallit_df["title"].str.contains(keyword_regex, case=False, na=False)
+        if career_level == "상관 없음": career_mask = pd.Series(True, index=rallit_df.index)
+        elif career_level == "신입": career_mask = rallit_df["jobLevels"].str.contains("신입|경력 무관|JUNIOR", case=False, na=False)
+        else: career_mask = rallit_df["jobLevels"].str.contains(career_level.replace('-','~'), case=False, na=False)
+        filtered_jobs = rallit_df[job_mask & career_mask].head(3)
+        if not filtered_jobs.empty:
+            context_text += "### [현재 조건에 맞는 채용 공고 예시]\n"
+            context_text += filtered_jobs[['title', 'companyName', 'jobLevels']].to_markdown(index=False) + "\n\n"
+    return context_text if context_text else "분석할 시장 데이터가 부족합니다."
+
 # --- 4. 분석 로직 ---
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
-
-# --- [수정] IndentationError 해결을 위해 함수 본문 복원 ---
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
     for job in job_category_map.keys():
         score = 0
-        if "분석" in work_style and any(k in job for k in ["데이터", "AI/ML", "백엔드"]):
-            score += 50
-        elif "창의" in work_style and any(k in job for k in ["마케팅", "디자인", "기획"]):
-            score += 50
-        if "독립" in work_env and any(k in job for k in ["엔드", "분석", "AI/ML"]):
-            score += 40
-        elif "팀워크" in work_env and any(k in job for k in ["기획", "마케팅", "디자인"]):
-            score += 40
-        if job == interest_job:
-            score += 15
+        if "분석" in work_style and any(k in job for k in ["데이터", "AI/ML", "백엔드"]): score += 50
+        elif "창의" in work_style and any(k in job for k in ["마케팅", "디자인", "기획"]): score += 50
+        if "독립" in work_env and any(k in job for k in ["엔드", "분석", "AI/ML"]): score += 40
+        elif "팀워크" in work_env and any(k in job for k in ["기획", "마케팅", "디자인"]): score += 40
+        if job == interest_job: score += 15
         job_fit_scores[job] = min(100, score + 5)
     return job_fit_scores
 
@@ -145,7 +162,7 @@ with st.sidebar:
 # --- 6. 메인 로직 실행 ---
 conn = init_connection()
 trend_df, skills_df, levels_df, rallit_df = load_all_data(conn)
-client = Groq(api_key=st.secrets.get("GROQ_API_KEY")) if "GROQ_API_KEY" in st.secrets else None
+client = Groq(api_key=st.secrets.get("GROQ_API_KEY")) if "GROQ_API_KEY" in st.secrets and st.secrets["GROQ_API_KEY"] != "" else None
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
