@@ -75,19 +75,13 @@ conn = init_connection()
 trend_df, skills_df, levels_df, rallit_df = load_data(conn)
 
 
-# --- [수정] NameError 해결을 위해 함수 재작성 ---
 def show_trend_chart(df):
     st.markdown("#### 📈 청년층 고용 시계열 추이 (전체 기준)")
     overall = df[df["성별"] == "전체"].sort_values("월")
     col = st.selectbox("📊 시계열 항목 선택", ["실업률", "경제활동인구", "취업자"], key="trend_col")
     fig = px.line(overall, x="월", y=col, title=f"{col} 월별 추이", markers=True)
-    
-    # hovertemplate을 더 안전한 방식으로 설정
-    if col == "실업률":
-        hovertemplate = "<b>월</b>: %{x}<br><b>실업률</b>: %{y:.1f}%"
-    else:
-        hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}"
-        
+    if col == "실업률": hovertemplate = "<b>월</b>: %{x}<br><b>실업률</b>: %{y:.1f}%"
+    else: hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}"
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -107,20 +101,18 @@ def calculate_job_fit(work_style, work_env, interest_job):
 
 # --- 5. 사이드바 UI ---
 with st.sidebar:
-    # --- [수정] st.container를 사용하여 사이드바 UI 개선 ---
     with st.container(border=True):
         st.header("👤 나의 프로필 설정")
         job_options = sorted(list(job_category_map.keys()))
         interest_job = st.selectbox("관심 직무", job_options, key="interest_job")
         career_options = ["상관 없음", "신입", "1-3년", "4-6년", "7-10년 이상"]
         career_level = st.selectbox("희망 경력 수준", career_options, key="career_level")
-
-    st.write("") # 약간의 공백 추가
-
+    st.write("")
     with st.container(border=True):
         st.header("🧠 나의 성향 진단")
         work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], key="work_style")
-        st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], key="work_env")
+        # --- [수정] 빠져있던 'work_env =' 할당 추가 ---
+        work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], key="work_env")
 
 
 # --- 6. 메인 로직 실행 ---
@@ -129,11 +121,10 @@ score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"])
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
 
 
-# --- 7. 대시보드 본문 ---
+# --- 7. 대시보드 본문 (이하 코드 동일) ---
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
 main_tabs = st.tabs(["🚀 나의 맞춤 분석", "📊 시장 동향 분석"])
 
-# 맞춤 분석 탭
 with main_tabs[0]:
     st.subheader(f"사용자님을 위한 맞춤 직무 분석")
     col1, col2 = st.columns(2)
@@ -184,7 +175,6 @@ with main_tabs[0]:
         else: st.error(f"Rallit 데이터 파일에 필수 컬럼('title', 'jobLevels')이 없습니다. CSV 파일의 컬럼명을 확인해주세요.")
     else: st.warning("❗ 랠릿 채용공고 데이터를 불러올 수 없습니다. `data` 폴더에 `rallit_*.csv` 파일이 있는지 확인해주세요.")
 
-# 시장 동향 분석 탭
 with main_tabs[1]:
     st.subheader("대한민국 채용 시장 트렌드 분석")
     market_tabs = st.tabs(["청년 고용지표", "직무별 기술스택", "직무별 경력레벨"])
