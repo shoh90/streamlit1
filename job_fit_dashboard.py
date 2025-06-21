@@ -9,7 +9,12 @@ import matplotlib.pyplot as plt
 import platform
 
 # --- 1. 페이지 기본 설정 ---
-st.set_page_config(page_title="Job-Fit Insight Dashboard", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Job-Fit Insight Dashboard",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # --- 2. CSS 스타일링 ---
 st.markdown("""
@@ -73,6 +78,7 @@ def create_word_cloud(df):
     return wc
 
 def show_trend_chart(df, age_group):
+    st.markdown("---")
     st.markdown(f"#### 📈 {age_group} 고용 시계열 추이 (전체 성별 기준)")
     overall = df[(df["성별"] == "전체") & (df["연령계층별"] == age_group)].sort_values("월")
     if overall.empty: st.info("선택된 연령대의 시계열 데이터가 없습니다."); return
@@ -207,8 +213,6 @@ with main_tabs[1]:
             selected_month = st.selectbox("🗓️ 조회할 월 선택", month_options, key="selected_month_v4")
             
             filtered_trend = trend_df[trend_df['연령계층별'] == selected_age]
-            
-            # --- [수정] 데이터 존재 여부 확인 로직 강화 ---
             current_overall_series = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")]
             
             if not current_overall_series.empty:
@@ -231,16 +235,9 @@ with main_tabs[1]:
                 m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
                 m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
                 
-                st.markdown("---")
-                gender_data = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] != "전체")]
-                if not gender_data.empty:
-                    fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
-                    fig_youth.update_traces(textposition='outside')
-                    st.plotly_chart(fig_youth, use_container_width=True)
-                else:
-                    st.info(f"선택하신 '{selected_age}', '{selected_month}' 조건의 성별 데이터가 없습니다.")
+                # --- [수정] 성별 실업률 차트 부분 삭제 ---
+                # 이전에 이 부분에 있던 성별 비교 바 차트 관련 코드를 모두 제거했습니다.
                 
-                st.markdown("---")
                 show_trend_chart(trend_df, selected_age)
             else:
                 st.warning(f"'{selected_age}', '{selected_month}'에 대한 전체 데이터가 없습니다. 다른 조건을 선택해주세요.")
