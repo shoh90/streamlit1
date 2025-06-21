@@ -81,18 +81,49 @@ def create_word_cloud(df):
     d = dict(zip(df['기술스택'], df['빈도']))
     system = platform.system()
     font_path = 'NanumGothic.ttf' if Path('NanumGothic.ttf').exists() else ('malgun' if system == 'Windows' else None)
-    if font_path is None: return None
+    if font_path is None:
+        return None
     wc = WordCloud(font_path=font_path, background_color='white', width=400, height=300, colormap='viridis').generate_from_frequencies(d)
     return wc
 
 def show_trend_chart(df, age_group):
-    # ... (이전과 동일)
+    st.markdown("---")
+    st.markdown(f"#### 📈 {age_group} 고용 시계열 추이 (전체 성별 기준)")
+    overall = df[(df["성별"] == "전체") & (df["연령계층별"] == age_group)].sort_values("월")
+    if overall.empty:
+        st.info("선택된 연령대의 시계열 데이터가 없습니다.")
+        return
+    col = st.selectbox("📊 시계열 항목 선택", ["실업률", "경제활동인구", "취업자"], key="trend_col")
+    fig = px.line(overall, x="월", y=col, title=f"{col} 월별 추이", markers=True)
+    if col == "실업률":
+        hovertemplate = "<b>월</b>: %{x}<br><b>실업률</b>: %{y:.1f}%"
+    else:
+        hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}명"
+    fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
+    st.plotly_chart(fig, use_container_width=True)
 
-# --- 분석 로직 및 사이드바 UI ---
-job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing"], "기획": ["기획", "PM", "PO", "서비스"], "프론트엔드": ["프론트엔드", "Frontend"], "백엔드": ["백엔드", "Backend"], "AI/ML": ["AI", "ML", "머신러닝"], "디자인": ["디자인", "디자이너", "UI/UX"], "영업": ["영업", "Sales"], "고객지원": ["CS", "CX", "고객"], "인사": ["인사", "HR", "채용"] }
+# --- 4. 분석 로직 ---
+job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
+
+# --- [수정] IndentationError 해결을 위해 함수 본문 복원 ---
 def calculate_job_fit(work_style, work_env, interest_job):
-    # ... (이전과 동일)
+    job_fit_scores = {}
+    for job in job_category_map.keys():
+        score = 0
+        if "분석" in work_style and any(k in job for k in ["데이터", "AI/ML", "백엔드"]):
+            score += 50
+        elif "창의" in work_style and any(k in job for k in ["마케팅", "디자인", "기획"]):
+            score += 50
+        if "독립" in work_env and any(k in job for k in ["엔드", "분석", "AI/ML"]):
+            score += 40
+        elif "팀워크" in work_env and any(k in job for k in ["기획", "마케팅", "디자인"]):
+            score += 40
+        if job == interest_job:
+            score += 15
+        job_fit_scores[job] = min(100, score + 5)
+    return job_fit_scores
 
+# --- 5. 사이드바 UI ---
 with st.sidebar:
     st.title("My Job-Fit Profile")
     with st.container(border=True):
@@ -105,15 +136,13 @@ with st.sidebar:
         st.header("🧠 나의 성향 진단")
         work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], key="work_style")
         work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], key="work_env")
-    
-    # --- Groq AI 도우미 설정 ---
     with st.container(border=True):
         st.header("🦙 AI 도우미 설정")
         selected_model = st.selectbox("사용할 AI 모델", ["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"])
         temperature = st.slider("Temperature (창의성)", 0.0, 1.0, 0.2, 0.05)
         max_tokens = st.slider("Max Tokens (답변 길이)", 128, 8192, 1500, 128)
 
-# --- 메인 로직 실행 ---
+# --- 6. 메인 로직 실행 ---
 conn = init_connection()
 trend_df, skills_df, levels_df, rallit_df = load_all_data(conn)
 client = Groq(api_key=st.secrets.get("GROQ_API_KEY")) if "GROQ_API_KEY" in st.secrets else None
@@ -122,54 +151,143 @@ score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"])
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
 
 
-# --- 대시보드 본문 ---
+# --- 7. 대시보드 본문 ---
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
 main_tabs = st.tabs(["🚀 나의 맞춤 분석", "📊 시장 동향 분석", "🦙 AI 도우미"])
 
-# 맞춤 분석 탭
 with main_tabs[0]:
-    # ... (이전과 동일)
+    st.subheader(f"사용자님을 위한 맞춤 직무 분석")
+    col1, col2 = st.columns([0.5, 0.5])
+    with col1:
+        st.markdown('<div class="highlight-card" style="height: 100%;">', unsafe_allow_html=True)
+        st.markdown(f"<h4>🏆 최적 추천 직무</h4><h1>{top_job}</h1>", unsafe_allow_html=True)
+        progress_value = score_df.iloc[0]["적합도"]
+        st.progress(int(progress_value) / 100)
+        st.markdown(f"**적합도: {progress_value}%**")
+        st.markdown("---")
+        st.markdown("##### 🔍 분석 요약")
+        st.markdown(f"✓ **'{work_style}'** 성향과 **'{work_env}'** 환경 선호,")
+        st.markdown(f"✓ 그리고 **'{interest_job}'** 직무에 대한 관심을 종합했을 때,")
+        st.markdown(f"➔ **<span style='color:#ff6b35; font-weight:bold;'>{top_job}</span>** 직무를 가장 추천합니다!", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col2:
+        skills_to_show_top = skills_df[skills_df["직무"] == top_job]
+        skills_to_show_interest = skills_df[skills_df["직무"] == interest_job]
+        levels_to_show_top = levels_df[levels_df['직무'] == top_job]
+        if not skills_to_show_top.empty:
+            st.markdown(f"##### ✨ **'{top_job}' 직무 핵심 역량**")
+            skill_tabs = st.tabs(["📊 기술 스택 빈도", "☁️ 워드 클라우드"])
+            with skill_tabs[0]:
+                fig_skill = px.bar(skills_to_show_top.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{top_job}' 핵심 기술")
+                fig_skill.update_layout(yaxis_title="", height=400)
+                st.plotly_chart(fig_skill, use_container_width=True)
+            with skill_tabs[1]:
+                wc = create_word_cloud(skills_to_show_top)
+                if wc:
+                    fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
+                else:
+                    st.info("워드 클라우드를 생성하기 위한 한글 폰트를 찾을 수 없습니다.")
+        elif not skills_to_show_interest.empty:
+            st.info(f"'{top_job}'의 스킬 정보가 없어, 관심 직무 **'{interest_job}'**의 정보를 대신 표시합니다.")
+            skill_tabs = st.tabs(["📊 기술 스택 빈도", "☁️ 워드 클라우드"])
+            with skill_tabs[0]:
+                fig_skill = px.bar(skills_to_show_interest.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{interest_job}' 핵심 기술 (관심 직무)")
+                st.plotly_chart(fig_skill, use_container_width=True)
+            with skill_tabs[1]:
+                wc = create_word_cloud(skills_to_show_interest)
+                if wc:
+                    fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
+                else:
+                    st.info("워드 클라우드를 생성하기 위한 한글 폰트를 찾을 수 없습니다.")
+        elif not levels_to_show_top.empty:
+            with st.container(border=True):
+                st.warning(f"'{top_job}' 직무의 상세 스킬 정보가 아직 준비되지 않았습니다.")
+                st.info(f"대신 시장의 **'{top_job}' 직무 경력 분포**를 확인해보세요!")
+                fig_pie = px.pie(levels_to_show_top, names='jobLevels', values='공고수', title=f"'{top_job}' 직무 경력 분포", hole=0.3)
+                fig_pie.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            with st.container(border=True):
+                st.warning("추천 직무에 대한 상세 정보가 부족합니다.")
+                st.info("상단의 **'시장 동향 분석'** 탭에서 다양한 직무의 트렌드를 직접 탐색해보세요!")
+    
+    st.markdown("---")
+    st.subheader("📌 나에게 맞는 Rallit 채용공고")
+    if rallit_df is not None:
+        required_cols = ['title', 'jobLevels']
+        if all(col in rallit_df.columns for col in required_cols):
+            search_keywords = job_category_map.get(interest_job, [interest_job])
+            keyword_regex = '|'.join(search_keywords)
+            job_mask = rallit_df["title"].str.contains(keyword_regex, case=False, na=False)
+            if career_level == "상관 없음": career_mask = pd.Series(True, index=rallit_df.index)
+            elif career_level == "신입": career_mask = rallit_df["jobLevels"].str.contains("신입|경력 무관|신입~|JUNIOR", case=False, na=False)
+            else: career_mask = rallit_df["jobLevels"].str.contains(career_level.replace('-','~'), case=False, na=False)
+            filtered_jobs = rallit_df[job_mask & career_mask]
+            top_jobs = filtered_jobs.head(5)
+            if not top_jobs.empty:
+                for _, row in top_jobs.iterrows():
+                    st.markdown(f"""<div class="job-posting-card"><a href="{row['url']}" target="_blank">{row['title']}</a><p>🏢 **회사:** {row.get('companyName', '정보 없음')} | 📍 **지역:** {row.get('addressRegion', '정보 없음')}</p><p>🛠️ **기술스택:** {row.get('jobSkillKeywords', '정보 없음')}</p></div>""", unsafe_allow_html=True)
+            else: st.info(f"'{interest_job}' 직무와 '{career_level}' 수준에 맞는 채용 공고를 찾지 못했습니다.")
+        else: st.error(f"Rallit 데이터 파일에 필수 컬럼('title', 'jobLevels')이 없습니다. CSV 파일의 컬럼명을 확인해주세요.")
+    else: st.warning("❗ 랠릿 채용공고 데이터를 불러올 수 없습니다. `data` 폴더에 `rallit_*.csv` 파일이 있는지 확인해주세요.")
 
-# 시장 동향 분석 탭
 with main_tabs[1]:
-    # ... (이전과 동일)
+    st.subheader("대한민국 채용 시장 트렌드 분석")
+    market_tabs = st.tabs(["고용 동향", "기술 스택", "경력 분포"])
+    with market_tabs[0]:
+        if not trend_df.empty:
+            age_options = sorted(trend_df["연령계층별"].unique())
+            selected_age = st.selectbox("🔎 연령 계층 선택", age_options, index=age_options.index("15-29세") if "15-29세" in age_options else 0)
+            st.markdown(f"#### **📊 {selected_age} 고용지표**")
+            month_options = sorted(trend_df["월"].unique(), reverse=True)
+            selected_month = st.selectbox("🗓️ 조회할 월 선택", month_options, key="selected_month_v4")
+            filtered_trend = trend_df[trend_df['연령계층별'] == selected_age]
+            current_overall_series = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")]
+            if not current_overall_series.empty:
+                current_overall = current_overall_series.iloc[0]
+                current_unemployment_rate, current_active_pop_k, current_employed_pop_k = current_overall['실업률'], current_overall['경제활동인구'] / 1000, current_overall['취업자'] / 1000
+                delta_unemployment, delta_active, delta_employed = None, None, None
+                prev_month_index = month_options.index(selected_month) + 1
+                if prev_month_index < len(month_options):
+                    prev_month = month_options[prev_month_index]
+                    prev_overall_series = filtered_trend[(filtered_trend["월"] == prev_month) & (filtered_trend["성별"] == "전체")]
+                    if not prev_overall_series.empty:
+                        prev_overall = prev_overall_series.iloc[0]
+                        delta_unemployment = f"{current_unemployment_rate - prev_overall['실업률']:.1f}%p"
+                        delta_active = f"{(current_active_pop_k - prev_overall['경제활동인구']/1000):,.0f} 천명"
+                        delta_employed = f"{(current_employed_pop_k - prev_overall['취업자']/1000):,.0f} 천명"
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric(label="실업률 (전체)", value=f"{current_unemployment_rate:.1f}%", delta=delta_unemployment, delta_color="inverse")
+                m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
+                m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
+                show_trend_chart(trend_df, selected_age)
+            else:
+                st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
+        else:
+            st.warning("고용지표 데이터를 불러오지 못했습니다.")
+    with market_tabs[1]:
+        st.markdown("#### **🛠️ 직무별 상위 기술스택 TOP 10**")
+        job_to_show = st.selectbox("분석할 직무 선택", sorted(skills_df["직무"].unique()), key="skill_job")
+        filtered_skills = skills_df[skills_df["직무"] == job_to_show]
+        fig_skills_market = px.bar(filtered_skills.sort_values("빈도"), x="빈도", y="기술스택", title=f"'{job_to_show}' 직무 주요 기술스택", orientation='h')
+        st.plotly_chart(fig_skills_market, use_container_width=True)
+    with market_tabs[2]:
+        st.markdown("#### **📈 직무별 공고 경력레벨 분포**")
+        c1, c2 = st.columns(2)
+        with c1:
+            fig_levels = px.bar(levels_df, x="jobLevels", y="공고수", color="직무", title="전체 직무별 경력 분포", category_orders={"jobLevels": ["JUNIOR", "MIDDLE", "SENIOR"]}, labels={"jobLevels": "경력 수준", "공고수": "채용 공고 수"})
+            st.plotly_chart(fig_levels, use_container_width=True)
+        with c2:
+            st.markdown("#### **🎯 특정 직무 경력 분포**")
+            selected_pie_job = st.selectbox("직무 선택", sorted(levels_df["직무"].unique()), key="pie_job")
+            single_job_levels = levels_df[levels_df['직무'] == selected_pie_job]
+            if not single_job_levels.empty:
+                fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{selected_pie_job}' 직무 경력 분포", hole=0.3)
+                fig_pie.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info(f"'{selected_pie_job}' 직무에 대한 경력 분포 데이터가 없습니다.")
 
-# AI 도우미 탭
-with main_tabs[2]:
-    st.subheader("Groq 기반 초고속 AI 분석")
-    if client is None:
-        st.error("AI 도우미를 사용하려면 Groq API 키를 Streamlit secrets에 설정해야 합니다. `[Secrets]` 탭을 확인하세요.", icon="🔑")
-    else:
-        ai_feature_tabs = st.tabs(["**📄 AI 직무 분석**", "**💬 AI 커리어 상담**"])
-        with ai_feature_tabs[0]:
-            st.markdown("##### 채용 공고를 입력하면 AI가 분석해 드립니다.")
-            job_desc_input = st.text_area("여기에 채용 공고를 붙여넣으세요:", height=250, placeholder="...")
-            if st.button("분석 시작하기", key="analyze_job"):
-                if not job_desc_input: st.warning("분석할 채용 공고를 입력해주세요.")
-                else:
-                    with st.spinner("Groq AI가 채용 공고를 분석 중입니다..."):
-                        system_prompt = "You are a professional HR analyst. Analyze a job description and provide a structured summary in Korean."
-                        user_prompt = f"Analyze the following job description and provide the output in the specified format below.\n\n**Job Description:**\n---\n{job_desc_input}\n---\n\n**Output Format:**\n### 📝 핵심 요약 (3가지)\n- [핵심 역할]\n- [핵심 역할]\n- [핵심 역할]\n### 🛠️ 요구 기술 스택\n- [기술 1], [기술 2], ...\n### 📈 예상 경력 수준\n- [예: 신입, 1~3년차, 5년 이상 등]\n### 🗣️ 면접 예상 질문 (3가지)\n1. [기술 질문]\n2. [경험 질문]\n3. [문화 적합성 질문]"
-                        chat_completion = client.chat.completions.create(messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], model=selected_model, temperature=temperature, max_tokens=max_tokens)
-                        analysis_result = chat_completion.choices[0].message.content
-                    st.markdown("---"); st.subheader("🤖 Groq AI 분석 결과"); st.markdown(analysis_result)
-        with ai_feature_tabs[1]:
-            st.markdown("##### 현재 나의 프로필을 바탕으로 커리어에 대해 질문해보세요.")
-            user_profile = f"저는 **{interest_job}** 직무에 관심이 있고, 희망 경력은 **{career_level}** 입니다. 저의 성향은 **{work_style}**하고, **{work_env}** 환경을 선호합니다."
-            st.info(f"**현재 프로필:** {user_profile}")
-            question_examples = [f"{interest_job} 직무로 성장하기 위한 학습 로드맵을 짜주세요.", "이 프로필에 어울리는 다른 직무를 추천해주세요.", "제 성향에 맞는 회사를 찾으려면 어떤 점을 고려해야 할까요?"]
-            selected_question = st.selectbox("질문 예시를 선택하거나 직접 입력하세요:", [""] + question_examples)
-            user_question = st.text_input("질문 입력:", value=selected_question)
-            if st.button("AI에게 질문하기", key="ask_career"):
-                if not user_question: st.warning("질문을 입력해주세요.")
-                else:
-                    with st.spinner("Groq AI가 답변을 생성 중입니다..."):
-                        system_prompt = "You are a friendly and insightful career counselor. Based on the user's profile, answer their career-related questions in Korean."
-                        full_prompt = f"**User Profile:**\n{user_profile}\n\n**User Question:**\n{user_question}"
-                        chat_completion = client.chat.completions.create(messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": full_prompt}], model=selected_model, temperature=temperature, max_tokens=max_tokens)
-                        career_advice = chat_completion.choices[0].message.content
-                    st.markdown("---"); st.subheader("🤖 Groq AI 커리어 조언"); st.markdown(career_advice)
-
-# 푸터
+# 8. 푸터
 st.markdown("---")
 st.markdown('<div style="text-align: center; color: #666;"><p>🧠 Job-Fit Insight Dashboard | Powered by Streamlit & Groq</p></div>', unsafe_allow_html=True)
