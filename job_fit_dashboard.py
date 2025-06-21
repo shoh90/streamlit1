@@ -68,8 +68,10 @@ job_characteristics = {
     "프론트엔드": {"work_style": "창의적이고 혁신적", "work_env": "독립적으로 일하기"},
     "백엔드": {"work_style": "분석적이고 논리적", "work_env": "독립적으로 일하기"},
     "AI/ML": {"work_style": "분석적이고 논리적", "work_env": "독립적으로 일하기"},
-    "design": {"work_style": "창의적이고 혁신적", "work_env": "팀워크 중심"}, # design 추가
-    "IRRELEVANT": {"work_style": "사교적이고 협력적", "work_env": "빠른 변화와 도전"} # 예시 추가
+    "디자인": {"work_style": "창의적이고 혁신적", "work_env": "팀워크 중심"},
+    "영업": {"work_style": "사교적이고 협력적", "work_env": "빠른 변화와 도전"},
+    "고객지원": {"work_style": "사교적이고 협력적", "work_env": "안정적이고 예측 가능한"},
+    "인사": {"work_style": "체계적이고 계획적", "work_env": "팀워크 중심"}
 }
 
 
@@ -77,7 +79,6 @@ def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
     for job, char in job_characteristics.items():
         score = 0
-        if job == "IRRELEVANT": continue # IRRELEVANT 직무는 계산에서 제외
         if work_style == char["work_style"]: score += 60
         if work_env == char["work_env"]: score += 40
         if job == interest_job: score = min(100, score + 10)
@@ -88,12 +89,12 @@ def calculate_job_fit(work_style, work_env, interest_job):
 with st.sidebar:
     st.header("👤 나의 프로필 설정")
     
-    # 사이드바 직무 목록에 DB 데이터와 job_characteristics 키를 합쳐서 중복 제거
-    job_options = sorted(list(set(skills_df["직무"].unique()) | set(job_characteristics.keys())))
-    if "IRRELEVANT" in job_options: job_options.remove("IRRELEVANT")
-
+    job_options = sorted(list(job_characteristics.keys()))
     interest_job = st.selectbox("관심 직무", job_options, key="interest_job")
-    career_level = st.selectbox("현재 경력 수준", levels_df["jobLevels"].unique().tolist() + ["IRRELEVANT"], key="career_level")
+    
+    # --- [수정 1] 경력 수준 필터 옵션을 표준화된 리스트로 변경 ---
+    career_options = ["상관 없음", "신입", "1-3년", "4-6년", "7-10년 이상"]
+    career_level = st.selectbox("희망 경력 수준", career_options, key="career_level")
     
     st.markdown("---")
     st.header("🧠 나의 성향 진단")
@@ -105,13 +106,11 @@ with st.sidebar:
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 
-# score_df가 비어있는 경우를 대비한 방어 코드
 if not score_df.empty:
     top_job = score_df.iloc[0]["직무"]
 else:
     top_job = "분석 결과 없음"
-    score_df = pd.DataFrame([{"직무": "분석 결과 없음", "적합도": 0}]) # 빈 데이터프레임 생성
-
+    score_df = pd.DataFrame([{"직무": "분석 결과 없음", "적합도": 0}])
 
 # --- 2. 타이틀 & 소개 ---
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
@@ -127,33 +126,44 @@ with main_tabs[0]:
         st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
         st.markdown(f"<h4>🏆 최적 추천 직무</h4><h1>{top_job}</h1>", unsafe_allow_html=True)
         
-        # --- 여기가 수정된 부분입니다 ---
         progress_value = score_df.iloc[0]["적합도"]
-        st.progress(int(progress_value) / 100) # 값을 0.0 ~ 1.0 사이로 변환
+        st.progress(int(progress_value) / 100)
         st.markdown(f"**적합도: {progress_value}%**")
-        # --- 여기까지 ---
-
-        st.markdown(f"_{work_style} 성향과 {work_env} 선호도는 **{top_job}** 직무와 가장 잘 맞습니다._")
+        
+        # --- [수정 2] 분석 결과 텍스트를 더 동적이고 친절하게 변경 ---
+        st.markdown(f"👉 **'{work_style}'** 성향과 **'{work_env}'** 환경을 선호하는 당신에게는 **'{top_job}'** 직무가 가장 잘 맞아요!")
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
-        top_job_skills = skills_df[skills_df["직무"] == top_job]
-        if not top_job_skills.empty:
+        # --- [수정 3] 스킬 정보가 없을 경우, 관심 직무 정보로 대체(Fallback)하는 로직 추가 ---
+        skills_to_show = skills_df[skills_df["직무"] == top_job]
+        chart_title = f"'{top_job}' 직무 핵심 기술"
+        
+        if skills_to_show.empty:
+            # 최적 직무 스킬이 없으면, 관심 직무 스킬을 찾아봄
+            skills_to_show = skills_df[skills_df["직무"] == interest_job]
+            if not skills_to_show.empty:
+                st.info(f"'{top_job}'의 스킬 정보가 없어, 관심 직무 **'{interest_job}'**의 정보를 대신 표시합니다.")
+                chart_title = f"'{interest_job}' 직무 핵심 기술 (관심 직무)"
+
+        if not skills_to_show.empty:
             fig_skill = px.bar(
-                top_job_skills.sort_values("빈도", ascending=True),
+                skills_to_show.sort_values("빈도", ascending=True),
                 x="빈도", y="기술스택", orientation='h',
-                title=f"'{top_job}' 직무 핵심 기술 Top 10"
+                title=chart_title
             )
             fig_skill.update_layout(yaxis_title="")
             st.plotly_chart(fig_skill, use_container_width=True)
         else:
-            st.info(f"'{top_job}' 직무에 대한 스킬 정보가 아직 준비되지 않았습니다.")
+            # 둘 다 정보가 없을 경우
+            st.warning(f"'{top_job}' 및 '{interest_job}' 직무에 대한 상세 스킬 정보가 아직 준비되지 않았습니다.")
         
     st.markdown("---")
     st.subheader("🎯 다른 추천 직무들")
     st.dataframe(score_df, use_container_width=True)
 
-# (이하 코드는 동일)
+
 with main_tabs[1]:
     st.subheader("대한민국 채용 시장 트렌드 분석")
     market_tabs = st.tabs(["청년 고용지표", "직무별 기술스택", "직무별 경력레벨"])
@@ -190,7 +200,7 @@ with main_tabs[1]:
         fig_levels = px.bar(
             levels_df, x="jobLevels", y="공고수", color="직무",
             title="직무별/경력레벨별 공고 수 비교",
-            category_orders={"jobLevels": ["신입", "1~3년", "4~6년", "7~10년"]},
+            category_orders={"jobLevels": ["신입", "1-3년", "4-6년", "7-10년"]},
             labels={"jobLevels": "경력 수준", "공고수": "채용 공고 수"}
         )
         st.plotly_chart(fig_levels, use_container_width=True)
