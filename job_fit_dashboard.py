@@ -3,7 +3,6 @@ import pandas as pd
 import sqlite3
 import plotly.express as px
 from pathlib import Path
-import re
 
 # --- 페이지 설정 ---
 st.set_page_config(
@@ -41,23 +40,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- 데이터 로딩 (DB, 캐싱 적용) ---
-@st.cache_data
-def load_data_from_db(db_path="data/job_fit_insight.db"):
-    """SQLite DB에서 모든 테이블을 로드합니다."""
+# --- 데이터베이스 연결 및 데이터 로딩 (수정된 부분) ---
+
+# 1. DB 연결을 캐싱하는 함수 (리소스 캐싱)
+@st.cache_resource
+def init_connection(db_path="data/job_fit_insight.db"):
+    """SQLite DB에 대한 연결을 초기화하고 캐싱합니다."""
     db_file = Path(db_path)
     if not db_file.exists():
         st.error(f"데이터베이스 파일('{db_path}')을 찾을 수 없습니다. `setup_database.py`를 먼저 실행해주세요.")
         st.stop()
-        
-    conn = sqlite3.connect(db_file, check_same_thread=False)
-    youth_df = pd.read_sql("SELECT * FROM youth_summary", conn)
-    skills_df = pd.read_sql("SELECT * FROM top10_skills_per_job", conn)
-    levels_df = pd.read_sql("SELECT * FROM joblevel_counts", conn)
-    conn.close()
+    return sqlite3.connect(db_file, check_same_thread=False)
+
+# 2. 데이터를 쿼리하는 함수 (데이터 캐싱)
+@st.cache_data
+def load_data(_conn):
+    """DB 연결을 사용하여 모든 테이블을 로드합니다."""
+    youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
+    skills_df = pd.read_sql("SELECT * FROM top10_skills_per_job", _conn)
+    levels_df = pd.read_sql("SELECT * FROM joblevel_counts", _conn)
     return youth_df, skills_df, levels_df
 
-youth_df, skills_df, levels_df = load_data_from_db()
+# DB 연결 및 데이터 로드 실행
+conn = init_connection()
+youth_df, skills_df, levels_df = load_data(conn)
+
 
 # --- 개인 맞춤 분석 로직 ---
 job_characteristics = {
@@ -82,13 +89,14 @@ def calculate_job_fit(work_style, work_env, interest_job):
 # --- 1. 사이드바 – 사용자 입력 ---
 with st.sidebar:
     st.header("👤 나의 프로필 설정")
-    interest_job = st.selectbox("관심 직무", skills_df["직무"].unique())
-    career_level = st.selectbox("현재 경력 수준", levels_df["jobLevels"].unique())
+    # key를 추가하여 위젯 상태를 명확하게 관리
+    interest_job = st.selectbox("관심 직무", skills_df["직무"].unique(), key="interest_job")
+    career_level = st.selectbox("현재 경력 수준", levels_df["jobLevels"].unique(), key="career_level")
     
     st.markdown("---")
     st.header("🧠 나의 성향 진단")
-    work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], horizontal=True)
-    work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], horizontal=True)
+    work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], horizontal=True, key="work_style")
+    work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], horizontal=True, key="work_env")
 
 # --- 분석 로직 실행 ---
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
@@ -102,7 +110,7 @@ st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>
 main_tabs = st.tabs(["🚀 나의 맞춤 분석", "📊 시장 동향 분석"])
 
 with main_tabs[0]:
-    st.subheader(f"'{st.session_state.get('name', '사용자')}님'을 위한 맞춤 직무 분석")
+    st.subheader(f"사용자님을 위한 맞춤 직무 분석")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -135,9 +143,8 @@ with main_tabs[1]:
     with market_tabs[0]:
         st.markdown("#### **📊 청년층 고용지표 (15-29세)**")
         
-        # 월 목록 동적 생성
-        month_cols = [col.split('_')[0] for col in youth_df.columns if '_실업률' in col]
-        selected_month = st.selectbox("조회할 월 선택", sorted(month_cols, reverse=True))
+        month_cols = sorted([col.split('_')[0] for col in youth_df.columns if '_실업률' in col], reverse=True)
+        selected_month = st.selectbox("조회할 월 선택", month_cols, key="selected_month")
 
         m_col1, m_col2, m_col3 = st.columns(3)
         m_col1.markdown(f'<div class="metric-card"><h4>{selected_month} 실업률</h4><h2>{youth_df[f"{selected_month}_실업률"].mean():.1f}%</h2></div>', unsafe_allow_html=True)
