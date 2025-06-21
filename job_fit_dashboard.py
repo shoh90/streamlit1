@@ -143,6 +143,14 @@ def prepare_ai_analysis_data(skills_df, levels_df, rallit_df, interest_job, care
 # --- 5. 사이드바 UI ---
 with st.sidebar:
     st.title("My Job-Fit Profile")
+    
+    # --- [고도화] 새로고침 버튼 추가 ---
+    if st.button("🔄 데이터 새로고침", use_container_width=True):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.toast("데이터를 성공적으로 새로고침했습니다!", icon="✅")
+        st.rerun()
+
     with st.container(border=True):
         st.header("👤 나의 프로필 설정")
         job_options = sorted(list(job_category_map.keys()))
@@ -166,6 +174,7 @@ client = Groq(api_key=st.secrets.get("GROQ_API_KEY")) if "GROQ_API_KEY" in st.se
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
+
 
 # --- 7. 대시보드 본문 ---
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
@@ -308,7 +317,8 @@ with main_tabs[1]:
 with main_tabs[2]:
     st.subheader("Groq 기반 초고속 AI 분석")
     if client is None:
-        st.error("AI 도우미를 사용하려면 Groq API 키를 설정해야 합니다.", icon="🔑")
+        st.error("AI 도우미를 사용하려면 Groq API 키를 설정해야 합니다. Streamlit Cloud 배포 시 **Settings -> Secrets**에 키를 추가해주세요.", icon="🔑")
+        st.code("GROQ_API_KEY = 'gsk_YourKeyHere'")
     else:
         ai_feature_tabs = st.tabs(["**🤖 AI 맞춤 직무 추천**", "**📄 AI 채용공고 분석**", "**💬 AI 커리어 상담**"])
 
