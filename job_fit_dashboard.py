@@ -49,8 +49,7 @@ def load_data(_conn):
     rallit_df = None
     try:
         csv_files = glob.glob(str(Path("data") / "rallit_*.csv"))
-        if csv_files:
-            rallit_df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True).drop_duplicates(subset=['url']).reset_index(drop=True)
+        if csv_files: rallit_df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True).drop_duplicates(subset=['url']).reset_index(drop=True)
     except Exception as e: print(f"Error loading Rallit CSVs: {e}")
     try: youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
     except pd.io.sql.DatabaseError: youth_df = generate_sample_youth_data()
@@ -61,7 +60,6 @@ def load_data(_conn):
     mean_rates = youth_df.groupby('연령계층별')[rate_cols].mean().reset_index()
     for col in rate_cols: overall_data[col] = overall_data['연령계층별'].map(mean_rates.set_index('연령계층별')[col])
     youth_df = pd.concat([youth_df, overall_data], ignore_index=True)
-
     id_vars = ["성별", "연령계층별"]
     unemp_long = youth_df.melt(id_vars=id_vars, value_vars=rate_cols, var_name="월", value_name="실업률")
     pop_long = youth_df.melt(id_vars=id_vars, value_vars=[c for c in youth_df.columns if "_경제활동인구" in c], var_name="월", value_name="경제활동인구")
@@ -91,11 +89,7 @@ def show_trend_chart(df, age_group):
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- [수정] 누락된 데이터 로딩 호출 코드 추가 ---
-conn = init_connection()
-trend_df, skills_df, levels_df, rallit_df = load_data(conn)
-
-# --- 4. 분석 로직 및 5. 사이드바 UI ---
+# --- 4. 분석 로직 ---
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
@@ -109,23 +103,38 @@ def calculate_job_fit(work_style, work_env, interest_job):
         job_fit_scores[job] = min(100, score + 5)
     return job_fit_scores
 
+# --- 5. 사이드바 UI ---
 with st.sidebar:
+    # --- [고도화] 사이드바 전체 UI 개선 ---
+    st.title("My Job-Fit Profile")
+    
     with st.container(border=True):
-        st.header("👤 나의 프로필 설정")
+        st.header("👤 기본 정보")
         job_options = sorted(list(job_category_map.keys()))
         interest_job = st.selectbox("관심 직무", job_options, key="interest_job")
         career_options = ["상관 없음", "신입", "1-3년", "4-6년", "7-10년 이상"]
         career_level = st.selectbox("희망 경력 수준", career_options, key="career_level")
+        
     st.write("")
     with st.container(border=True):
         st.header("🧠 나의 성향 진단")
         work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], key="work_style")
         work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], key="work_env")
+        st.info("💡 선택하신 성향은 '나의 맞춤 분석' 탭의 직무 추천 점수에 직접 반영됩니다.")
+
+    st.write("")
+    with st.container(border=True):
+        st.header("✅ 나의 프로필 요약")
+        st.markdown(f"💼 **관심 직무**: {interest_job}")
+        st.markdown(f"📈 **희망 경력**: {career_level}")
+        st.markdown(f"🎨 **업무 스타일**: {work_style}")
+        st.markdown(f"🤝 **선호 환경**: {work_env}")
 
 # 6. 메인 로직 실행
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
+
 
 # 7. 대시보드 본문
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
@@ -140,7 +149,12 @@ with main_tabs[0]:
         progress_value = score_df.iloc[0]["적합도"]
         st.progress(int(progress_value) / 100)
         st.markdown(f"**적합도: {progress_value}%**")
-        st.markdown(f"👉 **'{work_style}'** 성향과 **'{work_env}'** 환경을 선호하는 당신에게는 **'{top_job}'** 직무가 가장 잘 맞아요!")
+        st.markdown("---")
+        # --- [고도화] 분석 요약 텍스트 개선 ---
+        st.markdown("##### 🔍 분석 요약")
+        st.markdown(f"✓ **'{work_style}'** 성향과")
+        st.markdown(f"✓ **'{work_env}'** 환경 선호를 바탕으로,")
+        st.markdown(f"➔ **<span style='color:#ff6b35; font-weight:bold;'>{top_job}</span>** 직무를 가장 추천합니다!", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with col2:
         skills_to_show = skills_df[skills_df["직무"] == top_job]
@@ -151,7 +165,6 @@ with main_tabs[0]:
         
         if not skills_to_show.empty:
             if fallback_used: st.info(f"'{top_job}'의 스킬 정보가 없어, 관심 직무 **'{interest_job}'**의 정보를 대신 표시합니다.")
-            
             skill_tabs = st.tabs(["📊 기술 스택 빈도", "☁️ 워드 클라우드"])
             with skill_tabs[0]:
                 fig_skill = px.bar(skills_to_show.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{interest_job if fallback_used else top_job}' 핵심 기술")
@@ -161,11 +174,9 @@ with main_tabs[0]:
                 try:
                     wc = create_word_cloud(skills_to_show)
                     fig, ax = plt.subplots()
-                    ax.imshow(wc, interpolation='bilinear')
-                    ax.axis('off')
+                    ax.imshow(wc, interpolation='bilinear'); ax.axis('off')
                     st.pyplot(fig)
-                except Exception as e:
-                    st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
+                except Exception: st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
         else:
             with st.container(border=True):
                 st.warning(f"'{top_job}' 직무의 상세 스킬 정보가 아직 준비되지 않았습니다.")
@@ -181,7 +192,7 @@ with main_tabs[0]:
             keyword_regex = '|'.join(search_keywords)
             job_mask = rallit_df["title"].str.contains(keyword_regex, case=False, na=False)
             if career_level == "상관 없음": career_mask = pd.Series(True, index=rallit_df.index)
-            elif career_level == "신입": career_mask = rallit_df["jobLevels"].str.contains("신입|경력 무관|신입~", case=False, na=False)
+            elif career_level == "신입": career_mask = rallit_df["jobLevels"].str.contains("신입|경력 무관|신입~|JUNIOR", case=False, na=False)
             else: career_mask = rallit_df["jobLevels"].str.contains(career_level.replace('-','~'), case=False, na=False)
             filtered_jobs = rallit_df[job_mask & career_mask]
             top_jobs = filtered_jobs.head(5)
