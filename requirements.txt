@@ -2,3 +2,4 @@ numpy
 streamlit
 pandas
 plotly
+wordcloud
