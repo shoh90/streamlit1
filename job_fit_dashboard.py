@@ -40,28 +40,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- 데이터베이스 연결 및 데이터 로딩 (수정된 부분) ---
-
-# 1. DB 연결을 캐싱하는 함수 (리소스 캐싱)
+# --- 데이터베이스 연결 및 데이터 로딩 ---
 @st.cache_resource
 def init_connection(db_path="data/job_fit_insight.db"):
-    """SQLite DB에 대한 연결을 초기화하고 캐싱합니다."""
     db_file = Path(db_path)
     if not db_file.exists():
         st.error(f"데이터베이스 파일('{db_path}')을 찾을 수 없습니다. `setup_database.py`를 먼저 실행해주세요.")
         st.stop()
     return sqlite3.connect(db_file, check_same_thread=False)
 
-# 2. 데이터를 쿼리하는 함수 (데이터 캐싱)
 @st.cache_data
 def load_data(_conn):
-    """DB 연결을 사용하여 모든 테이블을 로드합니다."""
     youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
     skills_df = pd.read_sql("SELECT * FROM top10_skills_per_job", _conn)
     levels_df = pd.read_sql("SELECT * FROM joblevel_counts", _conn)
     return youth_df, skills_df, levels_df
 
-# DB 연결 및 데이터 로드 실행
 conn = init_connection()
 youth_df, skills_df, levels_df = load_data(conn)
 
@@ -73,13 +67,17 @@ job_characteristics = {
     "기획": {"work_style": "체계적이고 계획적", "work_env": "팀워크 중심"},
     "프론트엔드": {"work_style": "창의적이고 혁신적", "work_env": "독립적으로 일하기"},
     "백엔드": {"work_style": "분석적이고 논리적", "work_env": "독립적으로 일하기"},
-    "AI/ML": {"work_style": "분석적이고 논리적", "work_env": "독립적으로 일하기"}
+    "AI/ML": {"work_style": "분석적이고 논리적", "work_env": "독립적으로 일하기"},
+    "design": {"work_style": "창의적이고 혁신적", "work_env": "팀워크 중심"}, # design 추가
+    "IRRELEVANT": {"work_style": "사교적이고 협력적", "work_env": "빠른 변화와 도전"} # 예시 추가
 }
+
 
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
     for job, char in job_characteristics.items():
         score = 0
+        if job == "IRRELEVANT": continue # IRRELEVANT 직무는 계산에서 제외
         if work_style == char["work_style"]: score += 60
         if work_env == char["work_env"]: score += 40
         if job == interest_job: score = min(100, score + 10)
@@ -89,19 +87,31 @@ def calculate_job_fit(work_style, work_env, interest_job):
 # --- 1. 사이드바 – 사용자 입력 ---
 with st.sidebar:
     st.header("👤 나의 프로필 설정")
-    # key를 추가하여 위젯 상태를 명확하게 관리
-    interest_job = st.selectbox("관심 직무", skills_df["직무"].unique(), key="interest_job")
-    career_level = st.selectbox("현재 경력 수준", levels_df["jobLevels"].unique(), key="career_level")
+    
+    # 사이드바 직무 목록에 DB 데이터와 job_characteristics 키를 합쳐서 중복 제거
+    job_options = sorted(list(set(skills_df["직무"].unique()) | set(job_characteristics.keys())))
+    if "IRRELEVANT" in job_options: job_options.remove("IRRELEVANT")
+
+    interest_job = st.selectbox("관심 직무", job_options, key="interest_job")
+    career_level = st.selectbox("현재 경력 수준", levels_df["jobLevels"].unique().tolist() + ["IRRELEVANT"], key="career_level")
     
     st.markdown("---")
     st.header("🧠 나의 성향 진단")
     work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], horizontal=True, key="work_style")
     work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], horizontal=True, key="work_env")
 
+
 # --- 분석 로직 실행 ---
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
-top_job = score_df.iloc[0]["직무"]
+
+# score_df가 비어있는 경우를 대비한 방어 코드
+if not score_df.empty:
+    top_job = score_df.iloc[0]["직무"]
+else:
+    top_job = "분석 결과 없음"
+    score_df = pd.DataFrame([{"직무": "분석 결과 없음", "적합도": 0}]) # 빈 데이터프레임 생성
+
 
 # --- 2. 타이틀 & 소개 ---
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
@@ -116,26 +126,34 @@ with main_tabs[0]:
     with col1:
         st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
         st.markdown(f"<h4>🏆 최적 추천 직무</h4><h1>{top_job}</h1>", unsafe_allow_html=True)
-        st.progress(score_df.iloc[0]["적합도"])
-        st.markdown(f"**적합도: {score_df.iloc[0]['적합도']}%**")
+        
+        # --- 여기가 수정된 부분입니다 ---
+        progress_value = score_df.iloc[0]["적합도"]
+        st.progress(int(progress_value) / 100) # 값을 0.0 ~ 1.0 사이로 변환
+        st.markdown(f"**적합도: {progress_value}%**")
+        # --- 여기까지 ---
+
         st.markdown(f"_{work_style} 성향과 {work_env} 선호도는 **{top_job}** 직무와 가장 잘 맞습니다._")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         top_job_skills = skills_df[skills_df["직무"] == top_job]
-        fig_skill = px.bar(
-            top_job_skills.sort_values("빈도", ascending=True),
-            x="빈도", y="기술스택", orientation='h',
-            title=f"'{top_job}' 직무 핵심 기술 Top 10"
-        )
-        fig_skill.update_layout(yaxis_title="")
-        st.plotly_chart(fig_skill, use_container_width=True)
+        if not top_job_skills.empty:
+            fig_skill = px.bar(
+                top_job_skills.sort_values("빈도", ascending=True),
+                x="빈도", y="기술스택", orientation='h',
+                title=f"'{top_job}' 직무 핵심 기술 Top 10"
+            )
+            fig_skill.update_layout(yaxis_title="")
+            st.plotly_chart(fig_skill, use_container_width=True)
+        else:
+            st.info(f"'{top_job}' 직무에 대한 스킬 정보가 아직 준비되지 않았습니다.")
         
     st.markdown("---")
     st.subheader("🎯 다른 추천 직무들")
     st.dataframe(score_df, use_container_width=True)
 
-
+# (이하 코드는 동일)
 with main_tabs[1]:
     st.subheader("대한민국 채용 시장 트렌드 분석")
     market_tabs = st.tabs(["청년 고용지표", "직무별 기술스택", "직무별 경력레벨"])
