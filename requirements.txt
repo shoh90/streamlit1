@@ -3,5 +3,5 @@ pandas
 plotly
 wordcloud
 matplotlib
-numpy
 groq
+tabulate
