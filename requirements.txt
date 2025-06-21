@@ -3,3 +3,4 @@ streamlit
 pandas
 plotly
 wordcloud
+llama-stack
