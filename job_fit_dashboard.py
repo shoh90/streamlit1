@@ -75,15 +75,8 @@ def load_data(_conn):
 @st.cache_data
 def create_word_cloud(df):
     d = dict(zip(df['기술스택'], df['빈도']))
-    
-    # OS에 따라 폰트 경로 설정 (Streamlit Cloud는 Linux 기반)
     system = platform.system()
-    if system == 'Windows':
-        font_path = 'malgun' # 맑은 고딕
-    else: # Linux, macOS 등
-        # Streamlit Cloud에 폰트 파일을 함께 업로드해야 함
-        font_path = 'NanumGothic.ttf' if Path('NanumGothic.ttf').exists() else None
-
+    font_path = 'NanumGothic.ttf' if Path('NanumGothic.ttf').exists() else ('malgun' if system == 'Windows' else None)
     wc = WordCloud(font_path=font_path, background_color='white', width=400, height=300, colormap='viridis').generate_from_frequencies(d)
     return wc
 
@@ -97,6 +90,10 @@ def show_trend_chart(df, age_group):
     else: hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}명"
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
+
+# --- [수정] 누락된 데이터 로딩 호출 코드 추가 ---
+conn = init_connection()
+trend_df, skills_df, levels_df, rallit_df = load_data(conn)
 
 # --- 4. 분석 로직 및 5. 사이드바 UI ---
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
@@ -129,7 +126,6 @@ with st.sidebar:
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
-
 
 # 7. 대시보드 본문
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
