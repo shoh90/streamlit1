@@ -33,7 +33,9 @@ st.markdown("""
 @st.cache_resource
 def init_connection(db_path="data/job_fit_insight.db"):
     db_file = Path(db_path)
-    if not db_file.exists(): st.error(f"DB 파일('{db_path}') 없음. `setup_database.py` 실행 필요."); st.stop()
+    if not db_file.exists():
+        st.error(f"데이터베이스 파일('{db_path}')을 찾을 수 없습니다. `setup_database.py`를 먼저 실행해주세요.")
+        st.stop()
     return sqlite3.connect(db_file, check_same_thread=False)
 
 def generate_sample_youth_data():
@@ -89,7 +91,7 @@ def show_trend_chart(df, age_group):
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
-# 4. 분석 로직 및 5. 사이드바 UI
+# --- 4. 분석 로직 및 5. 사이드바 UI ---
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
@@ -104,6 +106,7 @@ def calculate_job_fit(work_style, work_env, interest_job):
     return job_fit_scores
 
 with st.sidebar:
+    st.title("My Job-Fit Profile")
     with st.container(border=True):
         st.header("👤 나의 프로필 설정")
         job_options = sorted(list(job_category_map.keys()))
@@ -146,40 +149,45 @@ with main_tabs[0]:
         st.markdown(f"**적합도: {progress_value}%**")
         st.markdown("---")
         st.markdown("##### 🔍 분석 요약")
-        st.markdown(f"✓ **'{work_style}'** 성향과")
-        st.markdown(f"✓ **'{work_env}'** 환경 선호를 바탕으로,")
+        st.markdown(f"✓ **'{work_style}'** 성향과 **'{work_env}'** 환경 선호,")
+        st.markdown(f"✓ 그리고 **'{interest_job}'** 직무에 대한 관심을 종합했을 때,")
         st.markdown(f"➔ **<span style='color:#ff6b35; font-weight:bold;'>{top_job}</span>** 직무를 가장 추천합니다!", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with col2:
-        skills_to_show = skills_df[skills_df["직무"] == top_job]
-        fallback_used = False
-        if skills_to_show.empty:
-            skills_to_show = skills_df[skills_df["직무"] == interest_job]
-            fallback_used = True
-        
-        if not skills_to_show.empty:
-            if fallback_used: st.info(f"'{top_job}'의 스킬 정보가 없어, 관심 직무 **'{interest_job}'**의 정보를 대신 표시합니다.")
+        skills_to_show_top = skills_df[skills_df["직무"] == top_job]
+        skills_to_show_interest = skills_df[skills_df["직무"] == interest_job]
+        levels_to_show_top = levels_df[levels_df['직무'] == top_job]
+
+        if not skills_to_show_top.empty:
+            st.markdown(f"##### ✨ **'{top_job}' 직무 핵심 역량**")
             skill_tabs = st.tabs(["📊 기술 스택 빈도", "☁️ 워드 클라우드"])
             with skill_tabs[0]:
-                fig_skill = px.bar(skills_to_show.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{interest_job if fallback_used else top_job}' 핵심 기술")
+                fig_skill = px.bar(skills_to_show_top.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{top_job}' 핵심 기술")
                 fig_skill.update_layout(yaxis_title="", height=400)
                 st.plotly_chart(fig_skill, use_container_width=True)
             with skill_tabs[1]:
-                try:
-                    wc = create_word_cloud(skills_to_show)
-                    fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
+                try: wc = create_word_cloud(skills_to_show_top); fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
                 except Exception: st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
-        else:
+        elif not skills_to_show_interest.empty:
+            st.info(f"'{top_job}'의 스킬 정보가 없어, 관심 직무 **'{interest_job}'**의 정보를 대신 표시합니다.")
+            skill_tabs = st.tabs(["📊 기술 스택 빈도", "☁️ 워드 클라우드"])
+            with skill_tabs[0]:
+                fig_skill = px.bar(skills_to_show_interest.sort_values("빈도", ascending=True), x="빈도", y="기술스택", orientation='h', title=f"'{interest_job}' 핵심 기술 (관심 직무)")
+                st.plotly_chart(fig_skill, use_container_width=True)
+            with skill_tabs[1]:
+                try: wc = create_word_cloud(skills_to_show_interest); fig, ax = plt.subplots(); ax.imshow(wc, interpolation='bilinear'); ax.axis('off'); st.pyplot(fig)
+                except Exception: st.error("워드 클라우드 생성 중 오류가 발생했습니다. 한글 폰트가 지원되지 않는 환경일 수 있습니다.")
+        elif not levels_to_show_top.empty:
             with st.container(border=True):
                 st.warning(f"'{top_job}' 직무의 상세 스킬 정보가 아직 준비되지 않았습니다.")
                 st.info(f"대신 시장의 **'{top_job}' 직무 경력 분포**를 확인해보세요!")
-                single_job_levels = levels_df[levels_df['직무'] == top_job]
-                if not single_job_levels.empty:
-                    fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{top_job}' 직무 경력 분포", hole=0.3)
-                    fig_pie.update_traces(textinfo='percent+label')
-                    st.plotly_chart(fig_pie, use_container_width=True)
-                else:
-                    st.info(f"'{top_job}' 직무에 대한 경력 분포 데이터도 아직 없습니다.")
+                fig_pie = px.pie(levels_to_show_top, names='jobLevels', values='공고수', title=f"'{top_job}' 직무 경력 분포", hole=0.3)
+                fig_pie.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            with st.container(border=True):
+                st.warning("추천 직무에 대한 상세 정보가 부족합니다.")
+                st.info("상단의 **'시장 동향 분석'** 탭에서 다양한 직무의 트렌드를 직접 탐색해보세요!")
     
     st.markdown("---")
     st.subheader("📌 나에게 맞는 Rallit 채용공고")
@@ -235,12 +243,9 @@ with main_tabs[1]:
                 m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
                 m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
                 
-                # --- [수정] 성별 실업률 차트 부분 삭제 ---
-                # 이전에 이 부분에 있던 성별 비교 바 차트 관련 코드를 모두 제거했습니다.
-                
                 show_trend_chart(trend_df, selected_age)
             else:
-                st.warning(f"'{selected_age}', '{selected_month}'에 대한 전체 데이터가 없습니다. 다른 조건을 선택해주세요.")
+                st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
         else:
             st.warning("고용지표 데이터를 불러오지 못했습니다.")
             
