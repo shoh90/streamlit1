@@ -36,7 +36,6 @@ def init_connection(db_path="data/job_fit_insight.db"):
     return sqlite3.connect(db_file, check_same_thread=False)
 
 def generate_sample_youth_data():
-    """DB에 youth_summary가 없을 경우를 대비한 예시 데이터 생성"""
     data = {
         '성별': ['남성', '여성', '남성', '여성'],
         '연령계층별': ['15-29세', '15-29세', '30-39세', '30-39세'],
@@ -44,7 +43,7 @@ def generate_sample_youth_data():
         '2025.04_실업률': [7.0, 6.3, 3.2, 3.6], '2025.04_경제활동인구': [2460, 2160, 3420, 3120], '2025.04_취업자': [2287, 2023, 3310, 3010],
         '2025.05_실업률': [6.9, 6.2, 3.0, 3.4], '2025.05_경제활동인구': [2470, 2170, 3430, 3130], '2025.05_취업자': [2299, 2035, 3325, 3020]
     }
-    # 인구/취업자 단위 천명 -> 명으로 변환
+    # 데이터 단위가 천명이므로 1000을 곱해 '명' 단위로 변환
     for col in data:
         if "인구" in col or "취업자" in col:
             data[col] = [x * 1000 for x in data[col]]
@@ -64,7 +63,7 @@ def load_data(_conn):
     try:
         youth_df = pd.read_sql("SELECT * FROM youth_summary", _conn)
     except pd.io.sql.DatabaseError:
-        youth_df = generate_sample_youth_data() # DB에 테이블 없으면 예시 데이터 사용
+        youth_df = generate_sample_youth_data()
     
     overall_data = youth_df.groupby('연령계층별', as_index=False).sum(numeric_only=True)
     overall_data["성별"] = "전체"
@@ -97,11 +96,11 @@ def show_trend_chart(df, age_group):
     col = st.selectbox("📊 시계열 항목 선택", ["실업률", "경제활동인구", "취업자"], key="trend_col")
     fig = px.line(overall, x="월", y=col, title=f"{col} 월별 추이", markers=True)
     if col == "실업률": hovertemplate = "<b>월</b>: %{x}<br><b>실업률</b>: %{y:.1f}%"
-    else: hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}"
+    else: hovertemplate = f"<b>월</b>: %{{x}}<br><b>{col}</b>: %{{y:,.0f}}명"
     fig.update_traces(line_shape="spline", hovertemplate=hovertemplate)
     st.plotly_chart(fig, use_container_width=True)
 
-# 4. 분석 로직
+# 4. 분석 로직 및 5. 사이드바 UI (이전과 동일, 수정 없음)
 job_category_map = { "데이터 분석": ["데이터", "분석", "Data", "BI"], "마케팅": ["마케팅", "마케터", "Marketing", "광고", "콘텐츠"], "기획": ["기획", "PM", "PO", "서비스", "Product"], "프론트엔드": ["프론트엔드", "Frontend", "React", "Vue", "웹 개발"], "백엔드": ["백엔드", "Backend", "Java", "Python", "서버", "Node.js"], "AI/ML": ["AI", "ML", "머신러닝", "딥러닝", "인공지능"], "디자인": ["디자인", "디자이너", "Designer", "UI", "UX", "BX", "그래픽"], "영업": ["영업", "Sales", "세일즈", "비즈니스", "Business Development"], "고객지원": ["CS", "CX", "고객", "지원", "서비스 운영"], "인사": ["인사", "HR", "채용", "조직문화", "Recruiting"] }
 def calculate_job_fit(work_style, work_env, interest_job):
     job_fit_scores = {}
@@ -115,7 +114,6 @@ def calculate_job_fit(work_style, work_env, interest_job):
         job_fit_scores[job] = min(100, score + 5)
     return job_fit_scores
 
-# 5. 사이드바 UI
 with st.sidebar:
     with st.container(border=True):
         st.header("👤 나의 프로필 설정")
@@ -129,7 +127,7 @@ with st.sidebar:
         work_style = st.radio("선호하는 업무 스타일은?", ["분석적이고 논리적", "창의적이고 혁신적", "체계적이고 계획적", "사교적이고 협력적"], key="work_style")
         work_env = st.radio("선호하는 업무 환경은?", ["독립적으로 일하기", "팀워크 중심", "빠른 변화와 도전", "안정적이고 예측 가능한"], key="work_env")
 
-# 6. 메인 로직 실행
+# 6. 메인 로직 실행 (이전과 동일, 수정 없음)
 job_fit_scores = calculate_job_fit(work_style, work_env, interest_job)
 score_df = pd.DataFrame(job_fit_scores.items(), columns=["직무", "적합도"]).sort_values("적합도", ascending=False).reset_index(drop=True)
 top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 없음"
@@ -138,6 +136,7 @@ top_job = score_df.iloc[0]["직무"] if not score_df.empty else "분석 결과 �
 st.markdown('<div class="main-header"><h1>🧠 Job-Fit Insight Dashboard</h1><p>나의 성향과 시장 데이터를 결합한 최적의 커리어 인사이트를 찾아보세요.</p></div>', unsafe_allow_html=True)
 main_tabs = st.tabs(["🚀 나의 맞춤 분석", "📊 시장 동향 분석"])
 
+# 맞춤 분석 탭 (이전과 동일, 수정 없음)
 with main_tabs[0]:
     st.subheader(f"사용자님을 위한 맞춤 직무 분석")
     col1, col2 = st.columns(2)
@@ -195,42 +194,50 @@ with main_tabs[1]:
     
     with market_tabs[0]:
         if not trend_df.empty:
-            # --- [고도화] 연령 계층 필터 추가 ---
             age_options = sorted(trend_df["연령계층별"].unique())
             selected_age = st.selectbox("🔎 연령 계층 선택", age_options, index=age_options.index("15-29세") if "15-29세" in age_options else 0)
-            
             st.markdown(f"#### **📊 {selected_age} 고용지표**")
             
             month_options = sorted(trend_df["월"].unique(), reverse=True)
             selected_month = st.selectbox("🗓️ 조회할 월 선택", month_options, key="selected_month_v4")
 
             filtered_trend = trend_df[trend_df['연령계층별'] == selected_age]
-            current_overall = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")].iloc[0]
             
-            delta_unemployment, delta_active, delta_employed = None, None, None
             try:
+                current_overall = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] == "전체")].iloc[0]
+                
+                # --- [수정] 메트릭 카드 데이터 단위 및 서식 개선 ---
+                current_unemployment_rate = current_overall['실업률']
+                current_active_pop_k = current_overall['경제활동인구'] / 1000
+                current_employed_pop_k = current_overall['취업자'] / 1000
+                
+                delta_unemployment, delta_active, delta_employed = None, None, None
                 prev_month_index = month_options.index(selected_month) + 1
                 if prev_month_index < len(month_options):
                     prev_month = month_options[prev_month_index]
                     prev_overall = filtered_trend[(filtered_trend["월"] == prev_month) & (filtered_trend["성별"] == "전체")].iloc[0]
-                    delta_unemployment = f"{current_overall['실업률'] - prev_overall['실업률']:.1f}%p"
-                    delta_active = f"{current_overall['경제활동인구'] - prev_overall['경제활동인구']:,}명"
-                    delta_employed = f"{current_overall['취업자'] - prev_overall['취업자']:,}명"
-            except (IndexError, ValueError): pass
+                    
+                    delta_unemployment = f"{current_unemployment_rate - prev_overall['실업률']:.1f}%p"
+                    delta_active = f"{(current_active_pop_k - prev_overall['경제활동인구']/1000):,.0f} 천명"
+                    delta_employed = f"{(current_employed_pop_k - prev_overall['취업자']/1000):,.0f} 천명"
 
-            m_col1, m_col2, m_col3 = st.columns(3)
-            m_col1.metric(label=f"실업률 (전체)", value=f"{current_overall['실업률']:.1f}%", delta=delta_unemployment, delta_color="inverse")
-            m_col2.metric(label="경제활동인구 (전체)", value=f"{int(current_overall['경제활동인구']/10000):,} 만명", delta=delta_active)
-            m_col3.metric(label="취업자 수 (전체)", value=f"{int(current_overall['취업자']/10000):,} 만명", delta=delta_employed)
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric(label="실업률 (전체)", value=f"{current_unemployment_rate:.1f}%", delta=delta_unemployment, delta_color="inverse")
+                m_col2.metric(label="경제활동인구 (단위: 천명)", value=f"{current_active_pop_k:,.0f}", delta=delta_active)
+                m_col3.metric(label="취업자 수 (단위: 천명)", value=f"{current_employed_pop_k:,.0f}", delta=delta_employed)
 
-            st.markdown("---")
-            gender_data = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] != "전체")]
-            fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
-            fig_youth.update_traces(textposition='outside')
-            st.plotly_chart(fig_youth, use_container_width=True)
+                st.markdown("---")
+                gender_data = filtered_trend[(filtered_trend["월"] == selected_month) & (filtered_trend["성별"] != "전체")]
+                fig_youth = px.bar(gender_data, x="성별", y="실업률", color="성별", title=f"{selected_month} 성별 실업률", text_auto='.1f', color_discrete_map={'남성': '#1f77b4', '여성': '#ff7f0e'})
+                fig_youth.update_traces(textposition='outside')
+                st.plotly_chart(fig_youth, use_container_width=True)
+                
+                st.markdown("---")
+                show_trend_chart(trend_df, selected_age)
             
-            st.markdown("---")
-            show_trend_chart(trend_df, selected_age)
+            except IndexError:
+                st.warning(f"'{selected_age}', '{selected_month}'에 대한 데이터가 없습니다. 다른 조건을 선택해주세요.")
+                
         else: st.warning("고용지표 데이터를 불러오지 못했습니다.")
 
     with market_tabs[1]:
@@ -247,13 +254,15 @@ with main_tabs[1]:
             fig_levels = px.bar(levels_df, x="jobLevels", y="공고수", color="직무", title="전체 직무별 경력 분포", category_orders={"jobLevels": ["JUNIOR", "MIDDLE", "SENIOR"]}, labels={"jobLevels": "경력 수준", "공고수": "채용 공고 수"})
             st.plotly_chart(fig_levels, use_container_width=True)
         with c2:
-            # --- [고도화] 특정 직무 파이 차트 추가 ---
             st.markdown("#### **🎯 특정 직무 경력 분포**")
             selected_pie_job = st.selectbox("직무 선택", sorted(levels_df["직무"].unique()), key="pie_job")
             single_job_levels = levels_df[levels_df['직무'] == selected_pie_job]
-            fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{selected_pie_job}' 직무 경력 분포", hole=0.3)
-            fig_pie.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
+            if not single_job_levels.empty:
+                fig_pie = px.pie(single_job_levels, names='jobLevels', values='공고수', title=f"'{selected_pie_job}' 직무 경력 분포", hole=0.3)
+                fig_pie.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info(f"'{selected_pie_job}' 직무에 대한 경력 분포 데이터가 없습니다.")
 
 # 8. 푸터
 st.markdown("---")
