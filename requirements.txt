@@ -1,6 +1,7 @@
-numpy
 streamlit
 pandas
 plotly
 wordcloud
+matplotlib
+numpy
 llama-stack
